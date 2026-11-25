@@ -9,6 +9,46 @@ import feedparser
 DATA_DIR = Path("data")
 MAX_ITEMS_PER_SECTION = 30
 
+# کلمات کلیدی اجباری برای اینکه فقط اخبار مرتبط با ثبت‌نام‌ها و خدمات ثبت‌نامی برداشته شوند
+REGISTRATION_KEYWORDS = [
+    "ثبت نام",
+    "ثبتنام",
+    "نام نویسی",
+    "پیش ثبت نام",
+    "فراخوان",
+    "تمدید مهلت",
+    "مهلت ثبت",
+    "آغاز ثبت",
+    "شروع ثبت",
+    "زمان ثبت",
+    "نحوه ثبت",
+    "سامانه ثبت",
+    "دریافت کارت",
+    "اعلام نتایج",
+    "آزمون استخدامی",
+    "کنکور",
+    "وام",
+    "یارانه",
+    "کالابرگ",
+    "کارت سوخت",
+    "سجام",
+    "سهام عدالت",
+    "اظهارنامه",
+    "خودرو",
+    "حج",
+    "عتبات",
+]
+
+# کلمات منفی (اختیاری): اگر خبری این کلمات را داشت حتی با کلمات بالا رد شود
+EXCLUDE_KEYWORDS = [
+    "تبلیغ",
+    "رپورتاژ",
+    "فال",
+    "طالع",
+    "ورزشی",
+    "فوتبال",
+]
+
 SECTIONS = {
     "cafenet": {
         "file": DATA_DIR / "cafenet.json",
@@ -46,6 +86,22 @@ def clean_html(raw: str) -> str:
     text = re.sub(r"<[^>]+>", " ", raw or "")
     text = re.sub(r"\s+", " ", text).strip()
     return text[:200] + "..." if len(text) > 200 else text
+
+
+def is_registration_news(title: str, summary: str) -> bool:
+    norm_text = normalize_persian(f"{title} {summary}")
+    if any(normalize_persian(bad) in norm_text for bad in EXCLUDE_KEYWORDS):
+        return False
+    return any(normalize_persian(kw) in norm_text for kw in REGISTRATION_KEYWORDS)
+
+
+def detect_type(title: str, summary: str) -> str:
+    norm_text = normalize_persian(f"{title} {summary}")
+    if any(k in norm_text for k in ["فوری", "لغو", "تمدید", "هشدار", "پایان مهلت", "آخرین مهلت"]):
+        return "alert"
+    if any(k in norm_text for k in ["ثبت نام", "نام نویسی", "آغاز", "شروع", "اعلام نتایج", "فراخوان"]):
+        return "update"
+    return "info"
 
 
 def make_id(seed: str) -> int:
@@ -102,7 +158,12 @@ def main():
     seen_titles: dict[str, set[str]] = {}
 
     for sec_key, cfg in SECTIONS.items():
-        items = load_json_list(cfg["file"])
+        # تصفیه مجدد خبرهای قبلی تا خبرهای غیرثبت‌نامی قدیمی هم پاک شوند
+        raw_items = load_json_list(cfg["file"])
+        items = [
+            x for x in raw_items
+            if is_registration_news(str(x.get("title", "")), str(x.get("message", "")))
+        ]
         section_items[sec_key] = items
         seen_ids[sec_key] = {int(x.get("id", 0)) for x in items}
         seen_urls[sec_key] = {str(x.get("url", "")).strip().lower() for x in items if x.get("url")}
@@ -117,6 +178,7 @@ def main():
         for idx, fut in enumerate(as_completed(futures)):
             sec_key, src_name, entries = fut.result()
             added = 0
+            skipped_irrelevant = 0
 
             for entry in entries:
                 title = str(entry.get("title", "")).strip()
@@ -124,6 +186,11 @@ def main():
                 summary = clean_html(str(entry.get("summary", "") or entry.get("description", "")))
 
                 if not title:
+                    continue
+
+                # فیلتر فقط اخبار مربوط به ثبت‌نام‌ها
+                if not is_registration_news(title, summary):
+                    skipped_irrelevant += 1
                     continue
 
                 norm_title = normalize_persian(title)
@@ -138,7 +205,7 @@ def main():
 
                 section_items[sec_key].append({
                     "id": item_id,
-                    "type": "info",
+                    "type": detect_type(title, summary),
                     "source": src_name,
                     "title": title,
                     "message": summary or "برای مشاهده جزئیات روی لینک کلیک کنید.",
@@ -153,7 +220,7 @@ def main():
                 seen_titles[sec_key].add(norm_title)
                 added += 1
 
-            print(f"[{sec_key}] از منبع «{src_name}» تعداد {added} خبر جدید اضافه شد.")
+            print(f"[{sec_key}] منبع «{src_name}»: {added} ثبت‌نامی جدید | {skipped_irrelevant} غیرمرتبط رد شد.")
 
     for sec_key, cfg in SECTIONS.items():
         sorted_sec = sorted(
