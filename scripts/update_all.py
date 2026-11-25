@@ -18,13 +18,18 @@ REGISTRATION_KEYWORDS = [
     "فراخوان",
     "تمدید مهلت",
     "مهلت ثبت",
+    "مهلت نام نویسی",
     "آغاز ثبت",
     "شروع ثبت",
     "زمان ثبت",
     "نحوه ثبت",
     "سامانه ثبت",
     "دریافت کارت",
+    "کارت ورود به جلسه",
+    "ویرایش اطلاعات",
+    "تکمیل ظرفیت",
     "اعلام نتایج",
+    "نتایج اولیه",
     "آزمون استخدامی",
     "کنکور",
     "وام",
@@ -39,7 +44,7 @@ REGISTRATION_KEYWORDS = [
     "عتبات",
 ]
 
-# کلمات منفی (اختیاری): اگر خبری این کلمات را داشت حتی با کلمات بالا رد شود
+# کلمات منفی: اگر خبری این کلمات را داشت حتی با کلمات بالا رد شود
 EXCLUDE_KEYWORDS = [
     "تبلیغ",
     "رپورتاژ",
@@ -56,18 +61,26 @@ SECTIONS = {
             {"name": "دستیار کافی‌نت", "url": "https://onlinecofe.ir/news/feed/"},
             {"name": "کافی نتی", "url": "https://cafeneti.com/feed/"},
             {"name": "کافی نت آنلاین", "url": "https://cofeeenet.ir/feed/"},
+            {"name": "تسنیم اقتصادی", "url": "https://www.tasnimnews.ir/fa/rss/feed/0/8/7"},
+            {"name": "تسنیم اجتماعی", "url": "https://www.tasnimnews.ir/fa/rss/feed/0/8/2"},
         ],
     },
     "exams": {
         "file": DATA_DIR / "exams.json",
         "sources": [
-            {"name": "منبع آزمون ۱", "url": "https://example-exams-1.ir/feed/"},
+            {"name": "ایسنا آموزش", "url": "https://www.isna.ir/rss/tp/390"},
+            {"name": "ایسنا آموزش و پرورش", "url": "https://www.isna.ir/rss/tp/59"},
+            {"name": "مهر دانشجویی", "url": "https://www.mehrnews.com/rss/tp/178"},
+            {"name": "خبرآنلاین آموزش", "url": "https://www.khabaronline.ir/rss/tp/43"},
         ],
     },
     "notices": {
         "file": DATA_DIR / "notices.json",
         "sources": [
-            {"name": "منبع اطلاعیه ۱", "url": "https://example-notices.ir/feed/"},
+            {
+                "name": "کافی نت آنلاین - ثبت‌نام‌ها",
+                "url": "https://cofeeenet.ir/category/%d8%a7%d8%ae%d8%a8%d8%a7%d8%b1-%d8%ab%d8%a8%d8%aa-%d9%86%d8%a7%d9%85-%d9%87%d8%a7/feed/",
+            },
         ],
     },
 }
@@ -158,7 +171,6 @@ def main():
     seen_titles: dict[str, set[str]] = {}
 
     for sec_key, cfg in SECTIONS.items():
-        # تصفیه مجدد خبرهای قبلی تا خبرهای غیرثبت‌نامی قدیمی هم پاک شوند
         raw_items = load_json_list(cfg["file"])
         items = [
             x for x in raw_items
@@ -170,7 +182,7 @@ def main():
         seen_titles[sec_key] = {normalize_persian(str(x.get("title", ""))) for x in items if x.get("title")}
 
     futures = []
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         for sec_key, cfg in SECTIONS.items():
             for src in cfg["sources"]:
                 futures.append(executor.submit(fetch_source, sec_key, src))
@@ -188,7 +200,6 @@ def main():
                 if not title:
                     continue
 
-                # فیلتر فقط اخبار مربوط به ثبت‌نام‌ها
                 if not is_registration_news(title, summary):
                     skipped_irrelevant += 1
                     continue
