@@ -23,11 +23,24 @@ CAFENET_CORE_KEYWORDS = [
     "نهضت ملی", "سیم کارت", "اینترنت", "پاسپورت", "گواهینامه", "خسارت",
 ]
 
-EXAMS_CORE_KEYWORDS = [
-    "کنکور", "سنجش", "دانشگاه", "دانشجو", "آزمون", "استخدام", "استخدامی",
-    "مدرسه", "مدارس", "آموزش و پرورش", "فرهنگیان", "کارشناسی", "ارشد",
-    "دکتری", "کارت ورود به جلسه", "اعلام نتایج", "نتایج اولیه", "تراز",
-    "انتخاب رشته", "ظرفیت", "فراخوان استخدام", "ثبت نام کنکور", "ثبت نام آزمون",
+EXAMS_ACTION_OR_EXAM_KEYWORDS = [
+    "ثبت نام", "ثبتنام", "نام نویسی", "پیش ثبت نام", "تمدید مهلت", "مهلت ثبت",
+    "آغاز ثبت", "شروع ثبت", "فراخوان", "کنکور", "سنجش", "آزمون", "استخدام",
+    "استخدامی", "کارت ورود به جلسه", "اعلام نتایج", "نتایج اولیه", "نتایج نهایی",
+    "تراز", "انتخاب رشته", "ظرفیت", "دفترچه", "کارنامه", "مهمانی", "انتقال",
+]
+
+EXAMS_SUBJECT_KEYWORDS = [
+    "کنکور", "سنجش", "آزمون", "استخدام", "استخدامی", "دانشگاه", "دانشجو",
+    "فرهنگیان", "آموزش و پرورش", "کارشناسی", "ارشد", "دکتری", "ثبت نام",
+]
+
+EXAMS_EXCLUDE_KEYWORDS = [
+    "مراسم", "آیین", "استقبال از نودانشجویان", "نودانشجویان", "روز دانشجو",
+    "حضور رئیس جمهور", "رئیس جمهور", "رئیس دانشگاه تهران گفت", "رئیس دانشگاه گفت",
+    "پست الکترونیکی من", "مدال های", "مدال‌های", "المپیاد", "همایش", "نشست",
+    "بازدید", "افتتاح", "رونمایی", "سخنرانی", "گفت و گو", "گفت‌وگو",
+    "شورای صنفی", "بسیج دانشجویی", "تشکل", "خوابگاه", "تغذیه دانشجویی",
 ]
 
 NOTICES_CORE_KEYWORDS = [
@@ -110,7 +123,6 @@ SECTIONS = {
     },
 }
 
-# اسامی و عبارت‌های مرتبط با کانال‌های تلگرامی که نباید در متن خبرها بیایند
 CHANNEL_TAG_PHRASES = [
     "کانال نرخنامه و اخبار کافی نت",
     "کانال نرخنامه و اخبار کافی‌نت",
@@ -192,7 +204,6 @@ def normalize_persian(text: str) -> str:
 def strip_channel_promos(text: str) -> str:
     if not text:
         return ""
-    # حذف بلوک‌های امضای کانال و اشتراک‌گذاری (از شروع «کانال نرخنامه...» یا «| لطفا به اشتراک بگذارید» تا انتهای جمله/خط)
     text = re.sub(
         r"(?:کانال\s+)?نرخنامه\s+و\s+اخبار\s+کافی\s*[‌\s]?نت[^\n\.!؟]{0,90}(?:[\.!؟]|$)",
         "",
@@ -213,14 +224,11 @@ def strip_channel_promos(text: str) -> str:
     )
     for phrase in CHANNEL_TAG_PHRASES:
         text = re.sub(re.escape(phrase), "", text, flags=re.IGNORECASE)
-    # حذف جداکننده‌های عمودی «|» و متن‌های کوتاه بی‌معنیِ باقیمانده کنارشان
     text = re.sub(r"\s*\|\s*(?:نت\s*کشوری|کشوری|کانال[^\n|]{0,40})?\s*\|?\s*", " ", text)
     text = re.sub(r"\s*\|\s*", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
-    # اگر در انتها نقطه تنها یا خط تیره/پایپ اضافه مانده باشد تمیز شود
-    text = re.sub(r"(?:\s*[\.\-–—|]+)+$", "", text).strip()
+    text = re.sub(r"(?:[\.\-–—|]+\s*)+$", "", text).strip()
     if text and not text.endswith((".", "!", "؟", ":", "»", ")")):
-        # اگر جمله قبلی با نقطه تمام شده بود و پسوند ناقصی ماند، حذف شود
         if len(text.split()[-1]) <= 2 and "." in text:
             text = text.rsplit(".", 1)[0].strip()
     return text
@@ -294,7 +302,11 @@ def is_section_relevant(section_key: str, title: str, summary: str) -> bool:
     if section_key == "cafenet":
         return any(normalize_persian(kw) in norm_text for kw in CAFENET_CORE_KEYWORDS)
     if section_key == "exams":
-        return any(normalize_persian(kw) in norm_text for kw in EXAMS_CORE_KEYWORDS)
+        if any(normalize_persian(bad_ex) in norm_text for bad_ex in EXAMS_EXCLUDE_KEYWORDS):
+            return False
+        has_action = any(normalize_persian(kw) in norm_text for kw in EXAMS_ACTION_OR_EXAM_KEYWORDS)
+        has_subj = any(normalize_persian(kw) in norm_text for kw in EXAMS_SUBJECT_KEYWORDS)
+        return has_action and has_subj
     if section_key == "notices":
         return any(normalize_persian(kw) in norm_text for kw in NOTICES_CORE_KEYWORDS)
     return False
