@@ -1,13 +1,16 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import calendar
 import hashlib
 import html as html_lib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 import urllib.request
 import feedparser
+
+IRAN_TZ = timezone(timedelta(hours=3, minutes=30))
 
 DATA_DIR = Path("data")
 MAX_ITEMS_PER_SECTION = 40
@@ -144,6 +147,13 @@ CHANNEL_TAG_PHRASES = [
 ]
 
 
+def get_iran_now(dt: datetime | None = None) -> datetime:
+    base = dt or datetime.now(timezone.utc)
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=timezone.utc)
+    return base.astimezone(IRAN_TZ)
+
+
 def gregorian_to_jalali(gy: int, gm: int, gd: int) -> tuple[int, int, int]:
     g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
     if gy > 1600:
@@ -171,15 +181,80 @@ def gregorian_to_jalali(gy: int, gm: int, gd: int) -> tuple[int, int, int]:
 
 
 def get_today_jalali_str(dt: datetime | None = None) -> str:
-    now = dt or datetime.now()
-    jy, jm, jd = gregorian_to_jalali(now.year, now.month, now.day)
+    now_ir = get_iran_now(dt)
+    jy, jm, jd = gregorian_to_jalali(now_ir.year, now_ir.month, now_ir.day)
     return f"{jy:04d}/{jm:02d}/{jd:02d}"
+
+
+def _persian_digits_to_latin(s: str) -> str:
+    trans = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+    return s.translate(trans)
+
+
+def datetime_to_iran_jalali_and_ts(dt_obj: datetime, fallback_ts: int) -> tuple[str, int]:
+    if dt_obj.tzinfo is None:
+        dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+    ir_dt = dt_obj.astimezone(IRAN_TZ)
+    jy, jm, jd = gregorian_to_jalali(ir_dt.year, ir_dt.month, ir_dt.day)
+    return f"{jy:04d}/{jm:02d}/{jd:02d}", int(ir_dt.timestamp())
+
+
+def parse_feed_entry_date(entry: dict, fallback_jalali: str, fallback_ts: int) -> tuple[str, int]:
+    for key in ("published_parsed", "updated_parsed"):
+        st = entry.get(key)
+        if st:
+            try:
+                ts_utc = int(calendar.timegm(st))
+                dt_utc = datetime.fromtimestamp(ts_utc, tz=timezone.utc)
+                return datetime_to_iran_jalali_and_ts(dt_utc, fallback_ts)
+            except Exception:
+                pass
+    for key in ("published", "updated", "dc_date", "created"):
+        raw_val = _persian_digits_to_latin(str(entry.get(key, "") or "").strip())
+        if not raw_val:
+            continue
+        m_j = re.search(r"\b(13\d{2}|14\d{2})[/-](\d{1,2})[/-](\d{1,2})\b", raw_val)
+        if m_j:
+            jy, jm, jd = int(m_j.group(1)), int(m_j.group(2)), int(m_j.group(3))
+            if 1 <= jm <= 12 and 1 <= jd <= 31:
+                return f"{jy:04d}/{jm:02d}/{jd:02d}", fallback_ts
+        try:
+            from dateutil import parser as du_parser
+            parsed = du_parser.parse(raw_val)
+            return datetime_to_iran_jalali_and_ts(parsed, fallback_ts)
+        except Exception:
+            pass
+        m_g = re.search(r"\b(20\d{2}|19\d{2})[/-](\d{1,2})[/-](\d{1,2})\b", raw_val)
+        if m_g:
+            gy, gm, gd = int(m_g.group(1)), int(m_g.group(2)), int(m_g.group(3))
+            if 1 <= gm <= 12 and 1 <= gd <= 31:
+                jy, jm, jd = gregorian_to_jalali(gy, gm, gd)
+                return f"{jy:04d}/{jm:02d}/{jd:02d}", fallback_ts
+    return fallback_jalali, fallback_ts
+
+
+def parse_iso_datetime_str(dt_str: str, fallback_jalali: str, fallback_ts: int) -> tuple[str, int]:
+    cleaned = _persian_digits_to_latin((dt_str or "").strip())
+    if not cleaned:
+        return fallback_jalali, fallback_ts
+    try:
+        iso_norm = cleaned.replace("Z", "+00:00")
+        dt_obj = datetime.fromisoformat(iso_norm)
+        return datetime_to_iran_jalali_and_ts(dt_obj, fallback_ts)
+    except Exception:
+        pass
+    try:
+        from dateutil import parser as du_parser
+        dt_obj = du_parser.parse(cleaned)
+        return datetime_to_iran_jalali_and_ts(dt_obj, fallback_ts)
+    except Exception:
+        return fallback_jalali, fallback_ts
 
 
 def normalize_date_to_jalali(date_str: str, fallback_str: str) -> str:
     if not date_str:
         return fallback_str
-    cleaned = date_str.strip()
+    cleaned = _persian_digits_to_latin(date_str).strip()
     m = re.match(r"^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$", cleaned)
     if not m:
         return fallback_str
@@ -368,7 +443,7 @@ def build_clean_title_and_summary(raw_block: str, is_estekhdam: bool = False) ->
     return title, summary, clean_full
 
 
-def parse_telegram_channel(url: str) -> list[dict]:
+def parse_telegram_channel(url: str, fallback_jalali: str, fallback_ts: int) -> list[dict]:
     is_estekhdam = "eestekhdam" in url.lower()
     req = urllib.request.Request(
         url,
@@ -378,12 +453,38 @@ def parse_telegram_channel(url: str) -> list[dict]:
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         page_html = resp.read().decode("utf-8", errors="ignore")
+    msg_wrappers = re.findall(
+        r'<div class="tgme_widget_message_bubble[^"]*"[^>]*>(.*?)</div>\s*</div>\s*</div>',
+        page_html,
+        flags=re.DOTALL,
+    )
+    entries = []
+    if msg_wrappers:
+        for block in reversed(msg_wrappers[-25:]):
+            text_m = re.search(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', block, flags=re.DOTALL)
+            if not text_m:
+                continue
+            raw_block = text_m.group(1)
+            time_m = re.search(r'<time[^>]*datetime="([^"]+)"', block)
+            dt_str = time_m.group(1) if time_m else ""
+            item_jalali, item_ts = parse_iso_datetime_str(dt_str, fallback_jalali, fallback_ts)
+            title, summary, full_text = build_clean_title_and_summary(raw_block, is_estekhdam=is_estekhdam)
+            if not title or not summary:
+                continue
+            entries.append({
+                "title": title,
+                "summary": summary,
+                "full_text": full_text,
+                "raw_html": raw_block,
+                "date": item_jalali,
+                "ts": item_ts,
+            })
+        return entries
     blocks = re.findall(
         r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
         page_html,
         flags=re.DOTALL,
     )
-    entries = []
     for raw_block in reversed(blocks[-25:]):
         title, summary, full_text = build_clean_title_and_summary(raw_block, is_estekhdam=is_estekhdam)
         if not title or not summary:
@@ -393,14 +494,16 @@ def parse_telegram_channel(url: str) -> list[dict]:
             "summary": summary,
             "full_text": full_text,
             "raw_html": raw_block,
+            "date": fallback_jalali,
+            "ts": fallback_ts,
         })
     return entries
 
 
-def fetch_source(section_key: str, source: dict) -> tuple[str, str, list[dict]]:
+def fetch_source(section_key: str, source: dict, fallback_jalali: str, fallback_ts: int) -> tuple[str, str, list[dict]]:
     try:
         if source.get("type") == "telegram":
-            entries = parse_telegram_channel(source["url"])
+            entries = parse_telegram_channel(source["url"], fallback_jalali, fallback_ts)
             return section_key, source["name"], entries
         feed = feedparser.parse(source["url"])
         entries = []
@@ -409,11 +512,14 @@ def fetch_source(section_key: str, source: dict) -> tuple[str, str, list[dict]]:
             title_clean = clean_text_content(str(e.get("title", "")), max_len=130)
             summary_clean = clean_text_content(raw_html, max_len=DEFAULT_SUMMARY_LEN)
             full_clean = clean_text_content(raw_html, max_len=DEFAULT_FULL_LEN)
+            item_jalali, item_ts = parse_feed_entry_date(dict(e), fallback_jalali, fallback_ts)
             entries.append({
                 "title": title_clean,
                 "summary": summary_clean,
                 "full_text": full_clean,
                 "raw_html": raw_html,
+                "date": item_jalali,
+                "ts": item_ts,
             })
         return section_key, source["name"], entries
     except Exception as e:
@@ -423,9 +529,9 @@ def fetch_source(section_key: str, source: dict) -> tuple[str, str, list[dict]]:
 
 def main():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    now_dt = datetime.now()
-    now_stamp = int(now_dt.timestamp())
-    today_jalali = get_today_jalali_str(now_dt)
+    now_ir = get_iran_now()
+    now_stamp = int(now_ir.timestamp())
+    today_jalali = get_today_jalali_str(now_ir)
     section_items: dict[str, list[dict]] = {}
     seen_ids: dict[str, set[int]] = {}
     global_seen_titles: set[str] = set()
@@ -464,7 +570,7 @@ def main():
     with ThreadPoolExecutor(max_workers=12) as executor:
         for sec_key, cfg in SECTIONS.items():
             for src in cfg["sources"]:
-                futures.append(executor.submit(fetch_source, sec_key, src))
+                futures.append(executor.submit(fetch_source, sec_key, src, today_jalali, now_stamp))
         for idx, fut in enumerate(as_completed(futures)):
             sec_key, src_name, entries = fut.result()
             added = 0
@@ -485,14 +591,16 @@ def main():
                 if item_id in seen_ids[sec_key]:
                     continue
                 reg_url = detect_portal_url(title, summary, raw_html)
+                item_date = normalize_date_to_jalali(str(entry.get("date", "")), today_jalali)
+                item_ts = int(entry.get("ts") or (now_stamp - idx))
                 item_obj = {
                     "id": item_id,
                     "type": detect_type(title, summary),
                     "title": title,
                     "message": summary or title,
                     "full_text": full_text or summary or title,
-                    "date": today_jalali,
-                    "_order": now_stamp - idx,
+                    "date": item_date,
+                    "_order": item_ts,
                 }
                 if reg_url:
                     item_obj["reg_url"] = reg_url
