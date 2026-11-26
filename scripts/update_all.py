@@ -12,39 +12,65 @@ import feedparser
 DATA_DIR = Path("data")
 MAX_ITEMS_PER_SECTION = 40
 
-REGISTRATION_KEYWORDS = [
+# کلمات کلیدی مرتبط با ثبت‌نام، خدمات دولتی/کافی‌نت، آزمون/دانشگاه و اطلاعیه‌ها
+GENERAL_ELIGIBLE_KEYWORDS = [
     "ثبت نام", "ثبتنام", "نام نویسی", "پیش ثبت نام", "فراخوان",
     "تمدید مهلت", "مهلت ثبت", "مهلت نام نویسی", "آغاز ثبت", "شروع ثبت",
     "زمان ثبت", "نحوه ثبت", "سامانه ثبت", "دریافت کارت", "کارت ورود به جلسه",
     "ویرایش اطلاعات", "تکمیل ظرفیت", "اعلام نتایج", "نتایج اولیه",
     "آزمون استخدامی", "استخدام", "کنکور", "وام", "یارانه", "کالابرگ",
     "کارت سوخت", "سجام", "سهام عدالت", "اظهارنامه", "مالیات", "خودرو",
-    "حج", "عتبات", "نوبت دهی", "تعویض پلاک", "گذرنامه", "نظام وظیفه",
-    "ابلاغیه", "ثنا", "نرخ خدمات", "تعرفه",
+    "نوبت دهی", "تعویض پلاک", "گذرنامه", "نظام وظیفه", "ابلاغیه", "ثنا",
+    "نرخ خدمات", "تعرفه", "بیمه", "بازنشستگی", "مسکن", "نهضت ملی",
 ]
+
+# کلیدواژه‌های اختصاصی هر بخش تا اخبار نامرتبط وارد آن تب نشوند
+SECTION_TOPIC_KEYWORDS = {
+    "cafenet": [
+        "کافی نت", "کافی‌نت", "نرخ خدمات", "تعرفه", "وام", "یارانه", "کالابرگ",
+        "کارت سوخت", "سجام", "سهام عدالت", "اظهارنامه", "مالیات", "خودرو",
+        "نوبت دهی", "تعویض پلاک", "گذرنامه", "نظام وظیفه", "ابلاغیه", "ثنا",
+        "اینترنت", "سیم کارت", "بیمه", "مسکن", "ثبت نام", "ثبتنام", "نام نویسی",
+    ],
+    "exams": [
+        "کنکور", "سنجش", "دانشگاه", "دانشجو", "آزمون", "استخدام", "استخدامی",
+        "مدرسه", "مدارس", "آموزش و پرورش", "فرهنگیان", "کارشناسی", "ارشد",
+        "دکتری", "کارت ورود به جلسه", "اعلام نتایج", "نتایج اولیه", "تراز",
+        "انتخاب رشته", "ظرفیت", "فراخوان", "ثبت نام", "ثبتنام",
+    ],
+    "notices": [
+        "اطلاعیه", "فراخوان", "ثبت نام", "ثبتنام", "نام نویسی", "تمدید مهلت",
+        "مهلت ثبت", "آغاز ثبت", "شروع ثبت", "اعلام نتایج", "وام", "یارانه",
+        "کالابرگ", "مالیات", "اظهارنامه", "بیمه", "مسکن", "خودرو", "سجام",
+        "سهام عدالت", "نوبت دهی", "ابلاغیه", "ثنا",
+    ],
+}
 
 EXCLUDE_KEYWORDS = [
-    "تبلیغ", "رپورتاژ", "فال", "طالع", "ورزشی", "فوتبال",
-    "قرعه کشی تلگرام", "پروکسی", "فیلترشکن",
+    "تبلیغ", "رپورتاژ", "فال", "طالع", "ورزشی", "فوتبال", "لیگ",
+    "آلودگی هوا", "هوای اهواز", "ناوگان تهران", "شورای اسلامی", "فرماندار",
+    "گردشگری", "تور", "قرعه کشی تلگرام", "پروکسی", "فیلترشکن",
 ]
 
+# دامنه‌های غیررسمی یا واسط که نباید به عنوان لینک مستقیم ثبت‌نام ثبت شوند
 BLOCKED_LINK_DOMAINS = (
     "isna.ir", "mehrnews.com", "tasnimnews.ir", "khabaronline.ir",
     "onlinecofe.ir", "cafeneti.com", "cofeeenet.ir", "farsnews.ir",
     "irna.ir", "yjc.ir", "tabnak.ir", "entekhab.ir", "asriran.com",
     "t.me", "telegram.me", "telegram.org", "eitaa.com", "rubika.ir",
-    "ble.ir", "instagram.com", "eestekhdam.com",
+    "ble.ir", "instagram.com", "eestekhdam.com", "e-estekhdam.com",
 )
 
+# لینک مستقیم سامانه‌های رسمی صرفاً برای خبرهایی که واقعا مربوط به همان سامانه هستند
 PORTAL_RULES = [
     (["کنکور", "سنجش", "پزشکی", "آزمون استخدامی", "تخصصی", "دکتری", "کارشناسی ارشد", "کارت ورود به جلسه", "اعلام نتایج"], "https://my.sanjesh.org"),
     (["آموزش و پرورش", "مدارس", "مای مدیو", "my.medu"], "https://my.medu.ir"),
     (["یارانه", "کالابرگ", "حمایتی"], "https://hemayat.mcls.gov.ir"),
     (["سجام"], "https://www.sejam.ir"),
     (["سهام عدالت"], "https://www.sahamedalat.ir"),
-    (["مالیات", "اظهارنامه", "مودیان", "مالیاتی"], "https://my.tax.gov.ir"),
+    (["مالیات", "اظهارنامه", "مودیان", "مالیاتی", "استرداد مالیات"], "https://my.tax.gov.ir"),
     (["کارت سوخت", "سوخت"], "https://fcp.niopdc.ir"),
-    (["خودرو", "یکپارچه خودرو", "فروش خودرو", "تعویض پلاک"], "https://esale.ikco.ir"),
+    (["خودرو", "یکپارچه خودرو", "فروش خودرو", "تعویض پلاک", "اسقاط"], "https://esale.ikco.ir"),
     (["گذرنامه", "نظام وظیفه", "سخا", "پلیس من"], "https://sakha.epolice.ir"),
     (["حج", "عتبات", "عمره"], "https://my.haj.ir"),
     (["ثبت احوال", "شناسنامه", "کارت ملی"], "https://ncr.ir"),
@@ -62,7 +88,6 @@ SECTIONS = {
             {"type": "rss", "name": "کافی نتی", "url": "https://cafeneti.com/feed/"},
             {"type": "rss", "name": "کافی نت آنلاین", "url": "https://cofeeenet.ir/feed/"},
             {"type": "rss", "name": "تسنیم اقتصادی", "url": "https://www.tasnimnews.ir/fa/rss/feed/0/8/7"},
-            {"type": "rss", "name": "تسنیم اجتماعی", "url": "https://www.tasnimnews.ir/fa/rss/feed/0/8/2"},
             {"type": "rss", "name": "مهر اقتصادی", "url": "https://www.mehrnews.com/rss/tp/25"},
             {"type": "rss", "name": "ایسنا اقتصادی", "url": "https://www.isna.ir/rss/tp/34"},
             {"type": "rss", "name": "خبرآنلاین اقتصادی", "url": "https://www.khabaronline.ir/rss/tp/2"},
@@ -109,8 +134,13 @@ def clean_text_content(raw: str, max_len: int = 240) -> str:
     if not raw:
         return ""
     text = html_lib.unescape(raw)
+    # حذف تگ‌های ایموجی و استایل‌های CSS تلگرام قبل از حذف تگ‌ها
+    text = re.sub(r"<i\b[^>]*>.*?</i>", " ", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<style\b[^>]*>.*?</style>", " ", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<script\b[^>]*>.*?</script>", " ", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<br\s*/?>", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"background-image\s*:\s*url\([^)]*\)", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"@[A-Za-z0-9_]{3,}", "", text)
     text = re.sub(r"https?://(?:t\.me|telegram\.me)/\S+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"(ادامه مطلب|بیشتر بخوانید|منبع\s*:.*|انتهای پیام.*|عضویت در کانال.*|لینک کانال.*)", "", text)
@@ -143,17 +173,28 @@ def detect_portal_url(title: str, summary: str, raw_html: str) -> str:
     if explicit:
         return explicit
     norm_text = normalize_persian(f"{title} {summary}")
+    # فقط وقتی خبر واقعاً مربوط به ثبت‌نام/دریافت خدمت/نتایج/اعلام فراخوان است لینک سامانه بده
+    action_words = ["ثبت نام", "ثبتنام", "نام نویسی", "دریافت کارت", "کارت ورود به جلسه", "اعلام نتایج", "فراخوان", "اظهارنامه", "نوبت دهی", "وام", "یارانه", "کالابرگ", "سجام", "سهام عدالت", "کارت سوخت", "ابلاغیه", "ثنا"]
+    if not any(normalize_persian(aw) in norm_text for aw in action_words):
+        return ""
     for keywords, portal_url in PORTAL_RULES:
         if any(normalize_persian(kw) in norm_text for kw in keywords):
             return portal_url
     return ""
 
 
-def is_registration_news(title: str, summary: str) -> bool:
+def is_section_relevant(section_key: str, title: str, summary: str) -> bool:
     norm_text = normalize_persian(f"{title} {summary}")
+    if not norm_text:
+        return False
     if any(normalize_persian(bad) in norm_text for bad in EXCLUDE_KEYWORDS):
         return False
-    return any(normalize_persian(kw) in norm_text for kw in REGISTRATION_KEYWORDS)
+    if not any(normalize_persian(kw) in norm_text for kw in GENERAL_ELIGIBLE_KEYWORDS):
+        return False
+    topic_list = SECTION_TOPIC_KEYWORDS.get(section_key, [])
+    if topic_list and not any(normalize_persian(tk) in norm_text for tk in topic_list):
+        return False
+    return True
 
 
 def detect_type(title: str, summary: str) -> str:
@@ -260,7 +301,7 @@ def main():
         for x in raw_items:
             t = clean_text_content(str(x.get("title", "")), max_len=120)
             m = clean_text_content(str(x.get("message", "")), max_len=240)
-            if not is_registration_news(t, m):
+            if not is_section_relevant(sec_key, t, m):
                 continue
             existing_reg = str(x.get("reg_url", "")).strip()
             if not existing_reg or is_blocked_url(existing_reg):
@@ -290,12 +331,12 @@ def main():
             sec_key, src_name, entries = fut.result()
             added = 0
             for entry in entries:
-                title = str(entry.get("title", "")).strip()
-                summary = str(entry.get("summary", "")).strip()
+                title = clean_text_content(str(entry.get("title", "")), max_len=120)
+                summary = clean_text_content(str(entry.get("summary", "")), max_len=240)
                 raw_html = str(entry.get("raw_html", ""))
                 if not title:
                     continue
-                if not is_registration_news(title, summary):
+                if not is_section_relevant(sec_key, title, summary):
                     continue
                 norm_title = normalize_persian(title)
                 if not norm_title or is_duplicate(norm_title, global_seen_titles):
@@ -318,7 +359,7 @@ def main():
                 seen_ids[sec_key].add(item_id)
                 global_seen_titles.add(norm_title)
                 added += 1
-            print(f"[{sec_key}] منبع «{src_name}»: {added} اطلاعیه ثبت‌نامی جدید اضافه شد.")
+            print(f"[{sec_key}] منبع «{src_name}»: {added} اطلاعیه مرتبط جدید اضافه شد.")
     for sec_key, cfg in SECTIONS.items():
         sorted_sec = sorted(
             section_items[sec_key],
