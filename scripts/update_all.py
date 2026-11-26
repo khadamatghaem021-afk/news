@@ -11,6 +11,8 @@ import feedparser
 
 DATA_DIR = Path("data")
 MAX_ITEMS_PER_SECTION = 40
+DEFAULT_SUMMARY_LEN = 750
+DEFAULT_FULL_LEN = 1200
 
 CAFENET_CORE_KEYWORDS = [
     "کافی نت", "کافی‌نت", "نرخ خدمات", "تعرفه", "ثبت نام", "ثبتنام",
@@ -36,6 +38,8 @@ NOTICES_CORE_KEYWORDS = [
 ]
 
 STRICT_EXCLUDE_KEYWORDS = [
+    "قابل توجه همکاران محترم", "ربات های ویژه ثبت نام", "ربات‌های ویژه ثبت نام",
+    "مدیریت مغازه یا دفترکار", "هزینه اشتراک ماهانه", "اشتراک ماهانه",
     "انتخابات میان دوره", "انتخابات میان‌دوره", "جمهوری خواهان", "دموکرات",
     "ترامپ", "وزیر خزانه داری", "وزیر خزانه‌داری", "آمریکا", "انگلیس",
     "آمازون", "amazon", "جنگ ایران", "توافق", "دیپلماسی", "سیاست خارجی",
@@ -164,7 +168,7 @@ def normalize_persian(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
-def clean_text_content(raw: str, max_len: int = 240) -> str:
+def clean_text_content(raw: str, max_len: int = DEFAULT_SUMMARY_LEN, strip_links_and_tags_text: bool = False) -> str:
     if not raw:
         return ""
     text = html_lib.unescape(raw)
@@ -180,6 +184,9 @@ def clean_text_content(raw: str, max_len: int = 240) -> str:
     text = re.sub(r"background-image\s*:\s*url\([^)]*\)?", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"@[A-Za-z0-9_]{3,}", "", text)
     text = re.sub(r"https?://(?:t\.me|telegram\.me)/\S+", "", text, flags=re.IGNORECASE)
+    if strip_links_and_tags_text:
+        text = re.sub(r"(?:https?://)?(?:www\.)?[a-z0-9-]+\.[a-z]{2,}(?:/\S*)?", "", text, flags=re.IGNORECASE)
+        text = text.replace("#", " ")
     text = re.sub(r"(ادامه مطلب|بیشتر بخوانید|منبع\s*:.*|انتهای پیام.*|عضویت در کانال.*|لینک کانال.*)", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:max_len] + "..." if len(text) > max_len else text
@@ -273,21 +280,25 @@ def load_json_list(path: Path) -> list[dict]:
     return []
 
 
-def build_clean_title_and_summary(raw_block: str) -> tuple[str, str]:
-    clean_full = clean_text_content(raw_block, max_len=500)
+def build_clean_title_and_summary(raw_block: str, is_estekhdam: bool = False) -> tuple[str, str, str]:
+    clean_full = clean_text_content(raw_block, max_len=DEFAULT_FULL_LEN, strip_links_and_tags_text=is_estekhdam)
     if not clean_full or len(clean_full) < 15:
-        return "", ""
+        return "", "", ""
     parts = re.split(r"<br\s*/?>|\n", raw_block)
-    cleaned_parts = [clean_text_content(p, max_len=160) for p in parts]
+    cleaned_parts = [
+        clean_text_content(p, max_len=160, strip_links_and_tags_text=is_estekhdam)
+        for p in parts
+    ]
     cleaned_parts = [p for p in cleaned_parts if p and len(p) >= 6 and not p.startswith(("<i", "class=", "style="))]
-    title = cleaned_parts[0] if cleaned_parts else clean_full[:110]
-    if len(title) > 115:
-        title = title[:112] + "..."
-    summary = clean_text_content(raw_block, max_len=240)
-    return title, summary
+    title = cleaned_parts[0] if cleaned_parts else clean_full[:115]
+    if len(title) > 120:
+        title = title[:117] + "..."
+    summary = clean_text_content(raw_block, max_len=DEFAULT_SUMMARY_LEN, strip_links_and_tags_text=is_estekhdam)
+    return title, summary, clean_full
 
 
 def parse_telegram_channel(url: str) -> list[dict]:
+    is_estekhdam = "eestekhdam" in url.lower()
     req = urllib.request.Request(
         url,
         headers={
@@ -303,12 +314,13 @@ def parse_telegram_channel(url: str) -> list[dict]:
     )
     entries = []
     for raw_block in reversed(blocks[-25:]):
-        title, summary = build_clean_title_and_summary(raw_block)
+        title, summary, full_text = build_clean_title_and_summary(raw_block, is_estekhdam=is_estekhdam)
         if not title or not summary:
             continue
         entries.append({
             "title": title,
             "summary": summary,
+            "full_text": full_text,
             "raw_html": raw_block,
         })
     return entries
@@ -322,10 +334,14 @@ def fetch_source(section_key: str, source: dict) -> tuple[str, str, list[dict]]:
         feed = feedparser.parse(source["url"])
         entries = []
         for e in getattr(feed, "entries", []):
-            raw_html = str(e.get("summary", "") or e.get("description", ""))
+            raw_html = str(e.get("summary", "") or e.get("description", "") or e.get("content", [{}])[0].get("value", "") if isinstance(e.get("content"), list) and e.get("content") else (e.get("summary", "") or e.get("description", "")))
+            title_clean = clean_text_content(str(e.get("title", "")), max_len=130)
+            summary_clean = clean_text_content(raw_html, max_len=DEFAULT_SUMMARY_LEN)
+            full_clean = clean_text_content(raw_html, max_len=DEFAULT_FULL_LEN)
             entries.append({
-                "title": str(e.get("title", "")).strip(),
-                "summary": clean_text_content(raw_html, max_len=240),
+                "title": title_clean,
+                "summary": summary_clean,
+                "full_text": full_clean,
                 "raw_html": raw_html,
             })
         return section_key, source["name"], entries
@@ -346,8 +362,10 @@ def main():
         raw_items = load_json_list(cfg["file"])
         items = []
         for x in raw_items:
-            t = clean_text_content(str(x.get("title", "")), max_len=120)
-            m = clean_text_content(str(x.get("message", "")), max_len=240)
+            t = clean_text_content(str(x.get("title", "")), max_len=130)
+            raw_msg = str(x.get("full_text") or x.get("message") or "")
+            is_est = ("e-estekhdam" in raw_msg.lower()) or ("eestekhdam" in raw_msg.lower())
+            m = clean_text_content(raw_msg, max_len=DEFAULT_SUMMARY_LEN, strip_links_and_tags_text=is_est)
             if not is_section_relevant(sec_key, t, m):
                 continue
             existing_reg = str(x.get("reg_url", "")).strip()
@@ -359,6 +377,7 @@ def main():
                 "type": x.get("type", detect_type(t, m)),
                 "title": t,
                 "message": m,
+                "full_text": clean_text_content(raw_msg, max_len=DEFAULT_FULL_LEN, strip_links_and_tags_text=is_est),
                 "date": item_date,
                 "_order": int(x.get("_order", now_stamp)),
             }
@@ -379,8 +398,10 @@ def main():
             sec_key, src_name, entries = fut.result()
             added = 0
             for entry in entries:
-                title = clean_text_content(str(entry.get("title", "")), max_len=120)
-                summary = clean_text_content(str(entry.get("summary", "")), max_len=240)
+                is_est = "e-estekhdam" in (src_name.lower() + " " + str(entry.get("summary", "")).lower())
+                title = clean_text_content(str(entry.get("title", "")), max_len=130, strip_links_and_tags_text=is_est)
+                summary = clean_text_content(str(entry.get("summary", "")), max_len=DEFAULT_SUMMARY_LEN, strip_links_and_tags_text=is_est)
+                full_text = clean_text_content(str(entry.get("full_text") or summary), max_len=DEFAULT_FULL_LEN, strip_links_and_tags_text=is_est)
                 raw_html = str(entry.get("raw_html", ""))
                 if not title:
                     continue
@@ -398,6 +419,7 @@ def main():
                     "type": detect_type(title, summary),
                     "title": title,
                     "message": summary or title,
+                    "full_text": full_text or summary or title,
                     "date": today_jalali,
                     "_order": now_stamp - idx,
                 }
