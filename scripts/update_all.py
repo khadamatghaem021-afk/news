@@ -4,12 +4,13 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 import feedparser
 
 DATA_DIR = Path("data")
-MAX_ITEMS_PER_SECTION = 30
+MAX_ITEMS_PER_SECTION = 40
 
-# کلمات کلیدی اجباری برای اینکه فقط اخبار مرتبط با ثبت‌نام‌ها و خدمات ثبت‌نامی برداشته شوند
+# کلمات کلیدی اختصاصی برای استخراج صرف اخبار ثبت‌نامی و خدمات کافی‌نت
 REGISTRATION_KEYWORDS = [
     "ثبت نام",
     "ثبتنام",
@@ -31,6 +32,7 @@ REGISTRATION_KEYWORDS = [
     "اعلام نتایج",
     "نتایج اولیه",
     "آزمون استخدامی",
+    "استخدام",
     "کنکور",
     "وام",
     "یارانه",
@@ -42,9 +44,12 @@ REGISTRATION_KEYWORDS = [
     "خودرو",
     "حج",
     "عتبات",
+    "نوبت دهی",
+    "تعویض پلاک",
+    "گذرنامه",
+    "نظام وظیفه",
 ]
 
-# کلمات منفی: اگر خبری این کلمات را داشت حتی با کلمات بالا رد شود
 EXCLUDE_KEYWORDS = [
     "تبلیغ",
     "رپورتاژ",
@@ -52,6 +57,38 @@ EXCLUDE_KEYWORDS = [
     "طالع",
     "ورزشی",
     "فوتبال",
+]
+
+# دامنه‌های خبرگزاری‌ها و سایت‌های واسط که نباید به عنوان لینک ثبت‌نام استفاده شوند
+NEWS_AGENCY_DOMAINS = (
+    "isna.ir",
+    "mehrnews.com",
+    "tasnimnews.ir",
+    "khabaronline.ir",
+    "onlinecofe.ir",
+    "cafeneti.com",
+    "cofeeenet.ir",
+    "farsnews.ir",
+    "irna.ir",
+    "yjc.ir",
+    "tabnak.ir",
+    "entekhab.ir",
+    "asriran.com",
+)
+
+# تشخیص خودکار لینک مستقیم سامانه‌های رسمی ثبت‌نام بر اساس موضوع خبر
+PORTAL_RULES = [
+    (["کنکور", "سنجش", "پزشکی", "آزمون استخدامی", "تخصصی", "دکتری", "کارشناسی ارشد", "کارت ورود به جلسه", "اعلام نتایج"], "https://my.sanjesh.org"),
+    (["آموزش و پرورش", "مدارس", "مای مدیو", "my.medu"], "https://my.medu.ir"),
+    (["یارانه", "کالابرگ", "حمایتی"], "https://hemayat.mcls.gov.ir"),
+    (["سجام"], "https://www.sejam.ir"),
+    (["سهام عدالت"], "https://www.sahamedalat.ir"),
+    (["مالیات", "اظهارنامه", "مودیان"], "https://my.tax.gov.ir"),
+    (["کارت سوخت", "سوخت"], "https://fcp.niopdc.ir"),
+    (["خودرو", "یکپارچه خودرو", "فروش خودرو", "تعویض پلاک"], "https://esale.ikco.ir"),
+    (["گذرنامه", "نظام وظیفه", "سخا", "پلیس من"], "https://sakha.epolice.ir"),
+    (["حج", "عتبات", "عمره"], "https://my.haj.ir"),
+    (["ثبت احوال", "شناسنامه", "کارت ملی"], "https://ncr.ir"),
 ]
 
 SECTIONS = {
@@ -63,6 +100,9 @@ SECTIONS = {
             {"name": "کافی نت آنلاین", "url": "https://cofeeenet.ir/feed/"},
             {"name": "تسنیم اقتصادی", "url": "https://www.tasnimnews.ir/fa/rss/feed/0/8/7"},
             {"name": "تسنیم اجتماعی", "url": "https://www.tasnimnews.ir/fa/rss/feed/0/8/2"},
+            {"name": "مهر اقتصادی", "url": "https://www.mehrnews.com/rss/tp/25"},
+            {"name": "ایسنا اقتصادی", "url": "https://www.isna.ir/rss/tp/34"},
+            {"name": "خبرآنلاین اقتصادی", "url": "https://www.khabaronline.ir/rss/tp/2"},
         ],
     },
     "exams": {
@@ -72,15 +112,19 @@ SECTIONS = {
             {"name": "ایسنا آموزش و پرورش", "url": "https://www.isna.ir/rss/tp/59"},
             {"name": "مهر دانشجویی", "url": "https://www.mehrnews.com/rss/tp/178"},
             {"name": "خبرآنلاین آموزش", "url": "https://www.khabaronline.ir/rss/tp/43"},
+            {"name": "تسنیم آموزش", "url": "https://www.tasnimnews.ir/fa/rss/feed/0/8/22"},
         ],
     },
     "notices": {
         "file": DATA_DIR / "notices.json",
         "sources": [
             {
-                "name": "کافی نت آنلاین - ثبت‌نام‌ها",
+                "name": "کافی نت آنلاین ثبت‌نام‌ها",
                 "url": "https://cofeeenet.ir/category/%d8%a7%d8%ae%d8%a8%d8%a7%d8%b1-%d8%ab%d8%a8%d8%aa-%d9%86%d8%a7%d9%85-%d9%87%d8%a7/feed/",
             },
+            {"name": "ایسنا اجتماعی", "url": "https://www.isna.ir/rss/tp/9"},
+            {"name": "مهر اجتماعی", "url": "https://www.mehrnews.com/rss/tp/6"},
+            {"name": "خبرآنلاین اجتماعی", "url": "https://www.khabaronline.ir/rss/tp/5"},
         ],
     },
 }
@@ -97,8 +141,46 @@ def normalize_persian(text: str) -> str:
 
 def clean_html(raw: str) -> str:
     text = re.sub(r"<[^>]+>", " ", raw or "")
+    # حذف عبارات تبلیغاتی انتهای فیدها مثل «ادامه مطلب» یا «مشاهده در سایت...»
+    text = re.sub(r"(ادامه مطلب|بیشتر بخوانید|منبع\s*:.*|انتهای پیام.*)", "", text)
     text = re.sub(r"\s+", " ", text).strip()
-    return text[:200] + "..." if len(text) > 200 else text
+    return text[:230] + "..." if len(text) > 230 else text
+
+
+def is_news_agency_url(url: str) -> bool:
+    if not url:
+        return True
+    try:
+        host = urlparse(url).netloc.lower()
+        return any(domain in host for domain in NEWS_AGENCY_DOMAINS)
+    except Exception:
+        return True
+
+
+def extract_official_url(raw_text: str) -> str:
+    """استخراج لینک‌های غیراز خبرگزاری‌ها از متن خبر (مثل سامانه‌های .ir یا .org دولتی)"""
+    if not raw_text:
+        return ""
+    urls = re.findall(r"https?://[^\s<>"']+", raw_text)
+    for u in urls:
+        cleaned = u.rstrip(").،؛!؟]")
+        if not is_news_agency_url(cleaned):
+            return cleaned
+    return ""
+
+
+def detect_portal_url(title: str, summary: str, raw_html: str) -> str:
+    """برگرداندن صرفاً لینک سامانه رسمی ثبت‌نام؛ در صورت نبودن، رشته خالی برمی‌گرداند"""
+    explicit = extract_official_url(f"{summary} {raw_html}")
+    if explicit:
+        return explicit
+
+    norm_text = normalize_persian(f"{title} {summary}")
+    for keywords, portal_url in PORTAL_RULES:
+        if any(normalize_persian(kw) in norm_text for kw in keywords):
+            return portal_url
+
+    return ""
 
 
 def is_registration_news(title: str, summary: str) -> bool:
@@ -122,9 +204,7 @@ def make_id(seed: str) -> int:
     return int(digest[:8], 16)
 
 
-def is_duplicate(norm_title: str, norm_link: str, seen_urls: set[str], seen_titles: set[str]) -> bool:
-    if norm_link and norm_link in seen_urls:
-        return True
+def is_duplicate(norm_title: str, seen_titles: set[str]) -> bool:
     if norm_title in seen_titles:
         return True
 
@@ -134,7 +214,7 @@ def is_duplicate(norm_title: str, norm_link: str, seen_urls: set[str], seen_titl
             words_b = set(existing.split())
             if words_b:
                 overlap = len(words_a & words_b) / min(len(words_a), len(words_b))
-                if overlap >= 0.85:
+                if overlap >= 0.80:
                     return True
     return False
 
@@ -167,22 +247,46 @@ def main():
 
     section_items: dict[str, list[dict]] = {}
     seen_ids: dict[str, set[int]] = {}
-    seen_urls: dict[str, set[str]] = {}
-    seen_titles: dict[str, set[str]] = {}
+    global_seen_titles: set[str] = set()
 
     for sec_key, cfg in SECTIONS.items():
         raw_items = load_json_list(cfg["file"])
-        items = [
-            x for x in raw_items
-            if is_registration_news(str(x.get("title", "")), str(x.get("message", "")))
-        ]
+        items = []
+        for x in raw_items:
+            t = str(x.get("title", ""))
+            m = str(x.get("message", ""))
+            if not is_registration_news(t, m):
+                continue
+
+            # حذف کامل نام منبع و لینک خبرگزاری از آیتم‌های قبلی
+            x.pop("source", None)
+            x.pop("url", None)
+
+            existing_reg = str(x.get("reg_url", "")).strip()
+            if not existing_reg or is_news_agency_url(existing_reg):
+                existing_reg = detect_portal_url(t, m, "")
+
+            cleaned_item = {
+                "id": int(x.get("id", make_id(normalize_persian(t)))),
+                "type": x.get("type", detect_type(t, m)),
+                "title": t,
+                "message": m,
+                "date": x.get("date", today_str),
+                "_order": int(x.get("_order", now_stamp)),
+            }
+            if existing_reg:
+                cleaned_item["reg_url"] = existing_reg
+
+            items.append(cleaned_item)
+
         section_items[sec_key] = items
         seen_ids[sec_key] = {int(x.get("id", 0)) for x in items}
-        seen_urls[sec_key] = {str(x.get("url", "")).strip().lower() for x in items if x.get("url")}
-        seen_titles[sec_key] = {normalize_persian(str(x.get("title", ""))) for x in items if x.get("title")}
+        global_seen_titles.update(
+            normalize_persian(str(x.get("title", ""))) for x in items if x.get("title")
+        )
 
     futures = []
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         for sec_key, cfg in SECTIONS.items():
             for src in cfg["sources"]:
                 futures.append(executor.submit(fetch_source, sec_key, src))
@@ -190,48 +294,45 @@ def main():
         for idx, fut in enumerate(as_completed(futures)):
             sec_key, src_name, entries = fut.result()
             added = 0
-            skipped_irrelevant = 0
 
             for entry in entries:
                 title = str(entry.get("title", "")).strip()
-                link = str(entry.get("link", "")).strip()
-                summary = clean_html(str(entry.get("summary", "") or entry.get("description", "")))
+                raw_html = str(entry.get("summary", "") or entry.get("description", ""))
+                summary = clean_html(raw_html)
 
                 if not title:
                     continue
 
                 if not is_registration_news(title, summary):
-                    skipped_irrelevant += 1
                     continue
 
                 norm_title = normalize_persian(title)
-                norm_link = link.lower()
-
-                if is_duplicate(norm_title, norm_link, seen_urls[sec_key], seen_titles[sec_key]):
+                if not norm_title or is_duplicate(norm_title, global_seen_titles):
                     continue
 
-                item_id = make_id(f"{sec_key}:{norm_title or norm_link}")
+                item_id = make_id(norm_title)
                 if item_id in seen_ids[sec_key]:
                     continue
 
-                section_items[sec_key].append({
+                reg_url = detect_portal_url(title, summary, raw_html)
+
+                item_obj = {
                     "id": item_id,
                     "type": detect_type(title, summary),
-                    "source": src_name,
                     "title": title,
-                    "message": summary or "برای مشاهده جزئیات روی لینک کلیک کنید.",
+                    "message": summary or title,
                     "date": today_str,
-                    "url": link,
                     "_order": now_stamp - idx,
-                })
+                }
+                if reg_url:
+                    item_obj["reg_url"] = reg_url
 
+                section_items[sec_key].append(item_obj)
                 seen_ids[sec_key].add(item_id)
-                if norm_link:
-                    seen_urls[sec_key].add(norm_link)
-                seen_titles[sec_key].add(norm_title)
+                global_seen_titles.add(norm_title)
                 added += 1
 
-            print(f"[{sec_key}] منبع «{src_name}»: {added} ثبت‌نامی جدید | {skipped_irrelevant} غیرمرتبط رد شد.")
+            print(f"[{sec_key}] منبع «{src_name}»: {added} اطلاعیه ثبت‌نامی جدید اضافه شد.")
 
     for sec_key, cfg in SECTIONS.items():
         sorted_sec = sorted(
