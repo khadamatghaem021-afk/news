@@ -168,6 +168,33 @@ def normalize_persian(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
+def strip_channel_promos(text: str) -> str:
+    if not text:
+        return ""
+    # حذف امضاها و تبلیغات کانال‌ها مثل «کانال نرخنامه و اخبار کافی نت ... نمائید. | لطفا به اشتراک بگذارید | ... کشوری»
+    text = re.sub(
+        r"کانال\s+نرخنامه\s+و\s+اخبار\s+کافی\s*[‌\s]?نت.*?(?:نمایند|نمائید|بگذارید|کشوری|$)",
+        "",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    text = re.sub(
+        r"\|?\s*لطفا\s+به\s+اشتراک\s+بگذارید\s*\|?.*?(?:کشوری|کانال|$)",
+        "",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    text = re.sub(
+        r"(?:کانال\s+(?:رسمی\s+)?(?:تلگرام|ایتا|روبیکا|بله|اخبار|کافی\s*[‌\s]?نت|استخدام|مالیاتی)\s+[^\n\.!؟|]{0,60}(?:نمایند|نمائید|عضویت|بپیوندید|بگذارید)[^\n\.!؟|]{0,40})",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\s*\|\s*\|?\s*", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 def clean_text_content(raw: str, max_len: int = DEFAULT_SUMMARY_LEN, strip_links_and_tags_text: bool = False) -> str:
     if not raw:
         return ""
@@ -188,6 +215,7 @@ def clean_text_content(raw: str, max_len: int = DEFAULT_SUMMARY_LEN, strip_links
         text = re.sub(r"(?:https?://)?(?:www\.)?[a-z0-9-]+\.[a-z]{2,}(?:/\S*)?", "", text, flags=re.IGNORECASE)
         text = text.replace("#", " ")
     text = re.sub(r"(ادامه مطلب|بیشتر بخوانید|منبع\s*:.*|انتهای پیام.*|عضویت در کانال.*|لینک کانال.*)", "", text)
+    text = strip_channel_promos(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:max_len] + "..." if len(text) > max_len else text
 
