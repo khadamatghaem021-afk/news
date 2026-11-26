@@ -200,7 +200,7 @@ def datetime_to_iran_jalali_and_ts(dt_obj: datetime, fallback_ts: int) -> tuple[
 
 
 def parse_feed_entry_date(entry: dict, fallback_jalali: str, fallback_ts: int) -> tuple[str, int]:
-    for key in ("published_parsed", "updated_parsed"):
+    for key in ("published_parsed", "updated_parsed", "created_parsed"):
         st = entry.get(key)
         if st:
             try:
@@ -209,7 +209,7 @@ def parse_feed_entry_date(entry: dict, fallback_jalali: str, fallback_ts: int) -
                 return datetime_to_iran_jalali_and_ts(dt_utc, fallback_ts)
             except Exception:
                 pass
-    for key in ("published", "updated", "dc_date", "created"):
+    for key in ("published", "updated", "dc_date", "created", "pubDate"):
         raw_val = _persian_digits_to_latin(str(entry.get(key, "") or "").strip())
         if not raw_val:
             continue
@@ -453,39 +453,22 @@ def parse_telegram_channel(url: str, fallback_jalali: str, fallback_ts: int) -> 
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         page_html = resp.read().decode("utf-8", errors="ignore")
-    msg_wrappers = re.findall(
-        r'<div class="tgme_widget_message_bubble[^"]*"[^>]*>(.*?)</div>\s*</div>\s*</div>',
-        page_html,
-        flags=re.DOTALL,
-    )
-    entries = []
-    if msg_wrappers:
-        for block in reversed(msg_wrappers[-25:]):
-            text_m = re.search(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', block, flags=re.DOTALL)
-            if not text_m:
-                continue
-            raw_block = text_m.group(1)
-            time_m = re.search(r'<time[^>]*datetime="([^"]+)"', block)
-            dt_str = time_m.group(1) if time_m else ""
-            item_jalali, item_ts = parse_iso_datetime_str(dt_str, fallback_jalali, fallback_ts)
-            title, summary, full_text = build_clean_title_and_summary(raw_block, is_estekhdam=is_estekhdam)
-            if not title or not summary:
-                continue
-            entries.append({
-                "title": title,
-                "summary": summary,
-                "full_text": full_text,
-                "raw_html": raw_block,
-                "date": item_jalali,
-                "ts": item_ts,
-            })
-        return entries
-    blocks = re.findall(
+
+    # استخراج دقیقِ تاریخ هر پیام با تکیه بر موقعیت <div class="tgme_widget_message_text ..."> و نزدیک‌ترین <time datetime="..."> پس از آن
+    text_matches = list(re.finditer(
         r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
         page_html,
         flags=re.DOTALL,
-    )
-    for raw_block in reversed(blocks[-25:]):
+    ))
+    entries = []
+    for idx_m, tm_obj in enumerate(text_matches[-25:]):
+        raw_block = tm_obj.group(1)
+        start_pos = tm_obj.end()
+        next_start = text_matches[text_matches.index(tm_obj) + 1].start() if text_matches.index(tm_obj) + 1 < len(text_matches) else len(page_html)
+        window_html = page_html[start_pos:next_start]
+        time_m = re.search(r'<time[^>]*datetime="([^"]+)"', window_html)
+        dt_str = time_m.group(1) if time_m else ""
+        item_jalali, item_ts = parse_iso_datetime_str(dt_str, fallback_jalali, fallback_ts - (25 - idx_m))
         title, summary, full_text = build_clean_title_and_summary(raw_block, is_estekhdam=is_estekhdam)
         if not title or not summary:
             continue
@@ -494,10 +477,10 @@ def parse_telegram_channel(url: str, fallback_jalali: str, fallback_ts: int) -> 
             "summary": summary,
             "full_text": full_text,
             "raw_html": raw_block,
-            "date": fallback_jalali,
-            "ts": fallback_ts,
+            "date": item_jalali,
+            "ts": item_ts,
         })
-    return entries
+    return list(reversed(entries))
 
 
 def fetch_source(section_key: str, source: dict, fallback_jalali: str, fallback_ts: int) -> tuple[str, str, list[dict]]:
@@ -507,12 +490,12 @@ def fetch_source(section_key: str, source: dict, fallback_jalali: str, fallback_
             return section_key, source["name"], entries
         feed = feedparser.parse(source["url"])
         entries = []
-        for e in getattr(feed, "entries", []):
+        for i, e in enumerate(getattr(feed, "entries", [])):
             raw_html = str(e.get("summary", "") or e.get("description", "") or e.get("content", [{}])[0].get("value", "") if isinstance(e.get("content"), list) and e.get("content") else (e.get("summary", "") or e.get("description", "")))
             title_clean = clean_text_content(str(e.get("title", "")), max_len=130)
             summary_clean = clean_text_content(raw_html, max_len=DEFAULT_SUMMARY_LEN)
             full_clean = clean_text_content(raw_html, max_len=DEFAULT_FULL_LEN)
-            item_jalali, item_ts = parse_feed_entry_date(dict(e), fallback_jalali, fallback_ts)
+            item_jalali, item_ts = parse_feed_entry_date(dict(e), fallback_jalali, fallback_ts - i)
             entries.append({
                 "title": title_clean,
                 "summary": summary_clean,
@@ -574,6 +557,7 @@ def main():
         for idx, fut in enumerate(as_completed(futures)):
             sec_key, src_name, entries = fut.result()
             added = 0
+            sample_dates = []
             for entry in entries:
                 is_est = "e-estekhdam" in (src_name.lower() + " " + str(entry.get("summary", "")).lower())
                 title = clean_text_content(str(entry.get("title", "")), max_len=130, strip_links_and_tags_text=is_est)
@@ -608,7 +592,9 @@ def main():
                 seen_ids[sec_key].add(item_id)
                 global_seen_titles.add(norm_title)
                 added += 1
-            print(f"[{sec_key}] منبع «{src_name}»: {added} اطلاعیه مرتبط جدید اضافه شد.")
+                if len(sample_dates) < 3:
+                    sample_dates.append(item_date)
+            print(f"[{sec_key}] منبع «{src_name}»: {added} اطلاعیه مرتبط جدید اضافه شد. (نمونه تاریخ‌ها: {sample_dates})")
     for sec_key, cfg in SECTIONS.items():
         sorted_sec = sorted(
             section_items[sec_key],
