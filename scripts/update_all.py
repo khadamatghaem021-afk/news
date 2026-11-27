@@ -83,10 +83,15 @@ IMPORTANT_KEYWORDS = [
     "هشدار", "اطلاعیه مهم", "تغییر زمان", "اصلاحیه",
 ]
 
+# فیلتر سخت‌گیرانه تبلیغات، رپورتاژ، تخفیف، فروش کالا/خدمات تجاری و لینک‌های غیررسمی
 STRICT_EXCLUDE_KEYWORDS = [
     "قابل توجه همکاران محترم", "ربات های ویژه ثبت نام", "ربات‌های ویژه ثبت نام",
     "مدیریت مغازه یا دفترکار", "هزینه اشتراک ماهانه", "اشتراک ماهانه",
-    "تبلیغ", "رپورتاژ", "فال", "طالع", "قرعه کشی تلگرام", "پروکسی", "فیلترشکن",
+    "تبلیغ", "تبلیغات", "رپورتاژ", "آگهی ویژه", "تخفیف ویژه", "کد تخفیف",
+    "فال", "طالع", "قرعه کشی تلگرام", "قرعه‌کشی تلگرام", "پروکسی", "فیلترشکن",
+    "خرید مستقیم", "خرید اقساطی", "فروش ویژه", "حراج", "تعداد محدود",
+    "همکاری با ما", "کسب درآمد", "بازاریابی", "پورسانت", "گروه تلگرامی",
+    "کانال تلگرامی", "لینک گروه", "لینک کانال", "عضویت در گروه",
 ]
 
 BLOCKED_LINK_DOMAINS = (
@@ -95,7 +100,20 @@ BLOCKED_LINK_DOMAINS = (
     "irna.ir", "yjc.ir", "tabnak.ir", "entekhab.ir", "asriran.com",
     "t.me", "telegram.me", "telegram.org", "eitaa.com", "rubika.ir",
     "ble.ir", "instagram.com", "eestekhdam.com", "e-estekhdam.com",
+    "divar.ir", "sheypoor.com", "digikala.com", "torob.com", "emalls.ir",
 )
+
+# قوانین دقیق تشخیص شرکت/سامانه خودرویی متناسب با متن خبر
+CAR_PORTAL_RULES = [
+    (["ایران خودرو", "ایران‌خودرو", "ایرانخودرو", "ikco", "تارا", "دنا", "پژو", "رانا", "سورن", "هایما"], "https://esale.ikco.ir"),
+    (["سایپا", "پارس خودرو", "پارس‌خودرو", "saipa", "شاهین", "کوییک", "ساینا", "اطلس", "سهند", "آریا"], "https://saipa.iranecar.com"),
+    (["بهمن موتور", "بهمن‌موتور", "bahman", "فیدلیتی", "دیگنیتی", "رسپکت", "کاپرا"], "https://bahman.iranecar.com"),
+    (["کرمان موتور", "کرمان‌موتور", "kermanmotor", "جک", "کی ام سی", "kma", "x55", "j7"], "https://customer.kermanmotor.com"),
+    (["مدیران خودرو", "mvm", "فونیکس", "fownix", "تیگو", "آریزو", "ایکس"], "https://mvm.iranecar.com"),
+    (["وارداتی", "جانبازان", "خودرو وارداتی"], "https://salecars.ir"),
+    (["فرسوده", "اسقاط", "نوسازی خودرو"], "https://nnhk.ir"),
+    (["تعویض پلاک"], "https://nobatdehi.epolice.ir"),
+]
 
 PORTAL_RULES = [
     (["کنکور", "سنجش", "پزشکی", "آزمون استخدامی", "تخصصی", "دکتری", "کارشناسی ارشد", "کارت ورود به جلسه", "اعلام نتایج"], "https://my.sanjesh.org"),
@@ -105,9 +123,6 @@ PORTAL_RULES = [
     (["سهام عدالت"], "https://www.sahamedalat.ir"),
     (["مالیات", "اظهارنامه", "مودیان", "مالیاتی", "استرداد مالیات"], "https://my.tax.gov.ir"),
     (["کارت سوخت", "سوخت"], "https://fcp.niopdc.ir"),
-    (["ایران خودرو", "ایران‌خودرو", "ایرانخودرو", "تارا", "دنا", "پژو", "رانا", "سورن"], "https://esale.ikco.ir"),
-    (["سایپا", "پارس خودرو", "شاهین", "کوییک", "ساینا", "اطلس", "سهند"], "https://saipa.iranecar.com"),
-    (["خودرو", "یکپارچه خودرو", "فروش خودرو", "تعویض پلاک", "اسقاط", "وارداتی"], "https://saleauto.ir"),
     (["گذرنامه", "نظام وظیفه", "سخا", "پلیس من"], "https://sakha.epolice.ir"),
     (["حج", "عتبات", "عمره"], "https://my.haj.ir"),
     (["ثبت احوال", "شناسنامه", "کارت ملی"], "https://ncr.ir"),
@@ -177,6 +192,15 @@ CHANNEL_TAG_PHRASES = [
     "به اشتراک بگذارید",
 ]
 
+PERSIAN_MONTHS = {
+    "فروردین": 1, "اردیبهشت": 2, "خرداد": 3,
+    "تیر": 4, "مرداد": 5, "شهریور": 6,
+    "مهر": 7, "آبان": 8, "آذر": 9,
+    "دی": 10, "بهمن": 11, "اسفند": 12,
+}
+
+MAX_STALE_DAYS = 14  # خبرهای قدیمی‌تر از ۱۴ روز به عنوان خبر جدید پذیرفته نمی‌شوند
+
 
 def get_iran_now(dt: datetime | None = None) -> datetime:
     base = dt or datetime.now(timezone.utc)
@@ -211,6 +235,50 @@ def gregorian_to_jalali(gy: int, gm: int, gd: int) -> tuple[int, int, int]:
     return jy, jm, jd
 
 
+def jalali_to_gregorian(jy: int, jm: int, jd: int) -> tuple[int, int, int]:
+    if jy > 979:
+        gy = 1600
+        jy -= 979
+    else:
+        gy = 621
+    days = (365 * jy) + ((jy // 33) * 8) + (((jy % 33) + 3) // 4) + 78 + jd + (
+        (jm - 1) * 31 if jm < 7 else ((jm - 7) * 30) + 186
+    )
+    gy += 400 * (days // 146097)
+    days %= 146097
+    if days > 36524:
+        gy += 100 * ((days - 1) // 36524)
+        days = (days - 1) % 36524
+        if days >= 365:
+            days += 1
+    gy += 4 * (days // 1461)
+    days %= 1461
+    if days > 365:
+        gy += (days - 1) // 365
+        days = (days - 1) % 365
+    gd = days + 1
+    for gm, month_len in enumerate([31, 29 if (gy % 4 == 0 and (gy % 100 != 0 or gy % 400 == 0)) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31], start=1):
+        if gd <= month_len:
+            return gy, gm, gd
+        gd -= month_len
+    return gy, 12, gd
+
+
+def jalali_str_to_ts(jalali_str: str, fallback_ts: int) -> int:
+    m = re.match(r"^(\d{4})/(\d{2})/(\d{2})$", jalali_str or "")
+    if not m:
+        return fallback_ts
+    jy, jm, jd = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if not (1300 <= jy <= 1500 and 1 <= jm <= 12 and 1 <= jd <= 31):
+        return fallback_ts
+    try:
+        gy, gm, gd = jalali_to_gregorian(jy, jm, jd)
+        dt_ir = datetime(gy, gm, gd, 12, 0, 0, tzinfo=IRAN_TZ)
+        return int(dt_ir.timestamp())
+    except Exception:
+        return fallback_ts
+
+
 def get_today_jalali_str(dt: datetime | None = None) -> str:
     now_ir = get_iran_now(dt)
     jy, jm, jd = gregorian_to_jalali(now_ir.year, now_ir.month, now_ir.day)
@@ -228,6 +296,33 @@ def datetime_to_iran_jalali_and_ts(dt_obj: datetime, fallback_ts: int) -> tuple[
     ir_dt = dt_obj.astimezone(IRAN_TZ)
     jy, jm, jd = gregorian_to_jalali(ir_dt.year, ir_dt.month, ir_dt.day)
     return f"{jy:04d}/{jm:02d}/{jd:02d}", int(ir_dt.timestamp())
+
+
+def extract_text_embedded_jalali(text: str, current_jalali: str, fallback_ts: int) -> tuple[str, int]:
+    """بررسی تاریخ‌های ذکرشده داخل متن خبر (مثل ۱۴۰۴/۰۸/۱۲ یا ۱۲ آبان ۱۴۰۴ یا تا ۱۵ آذر)"""
+    if not text:
+        return "", fallback_ts
+    lat = _persian_digits_to_latin(text)
+    cur_y = int(current_jalali.split("/")[0]) if "/" in current_jalali else 1404
+    cur_m = int(current_jalali.split("/")[1]) if "/" in current_jalali else 1
+
+    m_full = re.search(r"\b(13\d{2}|14\d{2})[/-](\d{1,2})[/-](\d{1,2})\b", lat)
+    if m_full:
+        jy, jm, jd = int(m_full.group(1)), int(m_full.group(2)), int(m_full.group(3))
+        if 1 <= jm <= 12 and 1 <= jd <= 31:
+            j_str = f"{jy:04d}/{jm:02d}/{jd:02d}"
+            return j_str, jalali_str_to_ts(j_str, fallback_ts)
+
+    for m_name, m_num in PERSIAN_MONTHS.items():
+        pat = rf"\b(\d{{1,2}})\s+{re.escape(m_name)}(?:\s+(13\d{{2}}|14\d{{2}}))?\b"
+        m_p = re.search(pat, lat)
+        if m_p:
+            jd = int(m_p.group(1))
+            jy = int(m_p.group(2)) if m_p.group(2) else (cur_y - 1 if m_num - cur_m > 6 else cur_y)
+            if 1 <= jd <= 31:
+                j_str = f"{jy:04d}/{m_num:02d}/{jd:02d}"
+                return j_str, jalali_str_to_ts(j_str, fallback_ts)
+    return "", fallback_ts
 
 
 def parse_feed_entry_date(entry: dict, fallback_jalali: str, fallback_ts: int) -> tuple[str, int]:
@@ -248,7 +343,8 @@ def parse_feed_entry_date(entry: dict, fallback_jalali: str, fallback_ts: int) -
         if m_j:
             jy, jm, jd = int(m_j.group(1)), int(m_j.group(2)), int(m_j.group(3))
             if 1 <= jm <= 12 and 1 <= jd <= 31:
-                return f"{jy:04d}/{jm:02d}/{jd:02d}", fallback_ts
+                j_str = f"{jy:04d}/{jm:02d}/{jd:02d}"
+                return j_str, jalali_str_to_ts(j_str, fallback_ts)
         try:
             from dateutil import parser as du_parser
             parsed = du_parser.parse(raw_val)
@@ -260,7 +356,8 @@ def parse_feed_entry_date(entry: dict, fallback_jalali: str, fallback_ts: int) -
             gy, gm, gd = int(m_g.group(1)), int(m_g.group(2)), int(m_g.group(3))
             if 1 <= gm <= 12 and 1 <= gd <= 31:
                 jy, jm, jd = gregorian_to_jalali(gy, gm, gd)
-                return f"{jy:04d}/{jm:02d}/{jd:02d}", fallback_ts
+                j_str = f"{jy:04d}/{jm:02d}/{jd:02d}"
+                return j_str, jalali_str_to_ts(j_str, fallback_ts)
     return fallback_jalali, fallback_ts
 
 
@@ -298,6 +395,23 @@ def normalize_date_to_jalali(date_str: str, fallback_str: str) -> str:
     return fallback_str
 
 
+def is_fresh_news(item_date_jalali: str, text_content: str, today_jalali: str, now_stamp: int) -> bool:
+    """بررسی تازه‌بودن خبر بر اساس تاریخ انتشار و تاریخ‌های داخل متن خبر"""
+    pub_ts = jalali_str_to_ts(item_date_jalali, now_stamp)
+    age_days_pub = (now_stamp - pub_ts) / 86400.0
+    if age_days_pub > MAX_STALE_DAYS:
+        return False
+
+    emb_date, emb_ts = extract_text_embedded_jalali(text_content, today_jalali, now_stamp)
+    if emb_date:
+        age_days_emb = (now_stamp - emb_ts) / 86400.0
+        norm_t = normalize_persian(text_content)
+        is_deadline_past = ("مهلت" in norm_t or "تا تاریخ" in norm_t or "پایان" in norm_t) and age_days_emb > 7
+        if age_days_emb > 25 or is_deadline_past:
+            return False
+    return True
+
+
 def normalize_persian(text: str) -> str:
     if not text:
         return ""
@@ -305,6 +419,17 @@ def normalize_persian(text: str) -> str:
     text = text.replace("ي", "ی").replace("ك", "ک").replace("ة", "ه")
     text = re.sub(r"[^\w\s\u0600-\u06FF]", " ", text)
     return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def is_ad_or_promo(title: str, summary: str, full_text: str = "") -> bool:
+    """تشخیص تبلیغات، لینک‌های تبلیغاتی، شماره تماس تبلیغاتی و متن‌های بازاریابی"""
+    combined = f"{title} {summary} {full_text}"
+    norm = normalize_persian(combined)
+    if any(normalize_persian(bad) in norm for bad in STRICT_EXCLUDE_KEYWORDS):
+        return True
+    if re.search(r"(?:شماره\s*تماس|تماس\s*با\s*ما|سفارش|پشتیبانی)\s*[:\s]*09\d{9}", _persian_digits_to_latin(combined)):
+        return True
+    return False
 
 
 def strip_channel_promos(text: str) -> str:
@@ -385,11 +510,25 @@ def extract_official_url(raw_text: str) -> str:
     return ""
 
 
-def detect_portal_url(title: str, summary: str, raw_html: str) -> str:
+def detect_portal_url(title: str, summary: str, raw_html: str, section_key: str = "") -> str:
+    """انتخاب لینک هماهنگ با محتوای دقیق خبر (به‌ویژه شرکت خودرویی مربوطه)"""
+    norm_text = normalize_persian(f"{title} {summary}")
+
+    if section_key == "cars" or any(normalize_persian(k) in norm_text for k in ["خودرو", "ایران خودرو", "سایپا", "بهمن موتور", "کرمان موتور", "مدیران خودرو", "فروش فوری", "پیش فروش", "یکپارچه خودرو", "وکالتی"]):
+        for keywords, car_url in CAR_PORTAL_RULES:
+            if any(normalize_persian(kw) in norm_text for kw in keywords):
+                return car_url
+        explicit_car = extract_official_url(f"{summary} {raw_html}")
+        if explicit_car:
+            return explicit_car
+        if any(normalize_persian(w) in norm_text for w in ["ثبت نام", "ثبتنام", "فروش فوری", "پیش فروش", "فروش فوق العاده", "یکپارچه", "وکالتی"]):
+            return "https://saleauto.ir"
+        return ""
+
     explicit = extract_official_url(f"{summary} {raw_html}")
     if explicit:
         return explicit
-    norm_text = normalize_persian(f"{title} {summary}")
+
     action_words = ["ثبت نام", "ثبتنام", "نام نویسی", "دریافت کارت", "کارت ورود به جلسه", "اعلام نتایج", "فراخوان", "اظهارنامه", "نوبت دهی", "وام", "یارانه", "کالابرگ", "سجام", "سهام عدالت", "کارت سوخت", "ابلاغیه", "ثنا", "فروش فوری", "پیش فروش", "یکپارچه", "وکالتی", "مای مدیو"]
     if not any(normalize_persian(aw) in norm_text for aw in action_words):
         return ""
@@ -399,11 +538,11 @@ def detect_portal_url(title: str, summary: str, raw_html: str) -> str:
     return ""
 
 
-def is_section_relevant(section_key: str, title: str, summary: str) -> bool:
+def is_section_relevant(section_key: str, title: str, summary: str, full_text: str = "") -> bool:
+    if is_ad_or_promo(title, summary, full_text):
+        return False
     norm_text = normalize_persian(f"{title} {summary}")
     if not norm_text:
-        return False
-    if any(normalize_persian(bad) in norm_text for bad in STRICT_EXCLUDE_KEYWORDS):
         return False
     if section_key == "important":
         return any(normalize_persian(kw) in norm_text for kw in IMPORTANT_KEYWORDS)
@@ -423,6 +562,8 @@ def is_section_relevant(section_key: str, title: str, summary: str) -> bool:
 
 
 def is_important_item(title: str, summary: str, item_type: str) -> bool:
+    if is_ad_or_promo(title, summary):
+        return False
     if item_type == "alert":
         return True
     norm_text = normalize_persian(f"{title} {summary}")
@@ -553,8 +694,6 @@ def write_paginated_section(sec_key: str, base_file: Path, items: list[dict], up
     total_items = len(capped_items)
     total_pages = max(1, math.ceil(total_items / PAGE_SIZE)) if total_items > 0 else 1
 
-    # ۱) ذخیره فایل‌های جداگانه برای دانلود تنبل (Lazy Load) هر صفحه:
-    # صفحه ۱: data/<sec>.json  |  صفحه ۲ تا ۸: data/<sec>_p2.json ... data/<sec>_p8.json
     for p in range(1, MAX_PAGES + 1):
         start_idx = (p - 1) * PAGE_SIZE
         end_idx = start_idx + PAGE_SIZE
@@ -573,10 +712,7 @@ def write_paginated_section(sec_key: str, base_file: Path, items: list[dict], up
             "next_file": next_page_file,
             "items": page_items,
         }
-        if p == 1:
-            target_path = base_file
-        else:
-            target_path = base_file.with_name(f"{sec_key}_p{p}.json")
+        target_path = base_file if p == 1 else base_file.with_name(f"{sec_key}_p{p}.json")
         target_path.write_text(
             json.dumps(page_payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -598,7 +734,6 @@ def main():
             seen_ids[sec_key] = set()
             continue
 
-        # خواندن صفحه ۱ (فایل اصلی) و صفحات ۲ تا ۸ قبلی در صورت وجود
         raw_items = []
         for p in range(1, MAX_PAGES + 1):
             p_path = cfg["file"] if p == 1 else cfg["file"].with_name(f"{sec_key}_p{p}.json")
@@ -619,21 +754,27 @@ def main():
             raw_msg = str(x.get("full_text") or x.get("message") or "")
             is_est = ("e-estekhdam" in raw_msg.lower()) or ("eestekhdam" in raw_msg.lower())
             m = clean_text_content(raw_msg, max_len=DEFAULT_SUMMARY_LEN, strip_links_and_tags_text=is_est)
-            if not is_section_relevant(sec_key, t, m):
-                continue
-            existing_reg = str(x.get("reg_url", "")).strip()
-            if not existing_reg or is_blocked_url(existing_reg):
-                existing_reg = detect_portal_url(t, m, "")
+            full_m = clean_text_content(raw_msg, max_len=DEFAULT_FULL_LEN, strip_links_and_tags_text=is_est)
             item_date = normalize_date_to_jalali(str(x.get("date", "")), today_jalali)
+            if not is_section_relevant(sec_key, t, m, full_m):
+                continue
+            if not is_fresh_news(item_date, f"{t} {full_m}", today_jalali, now_stamp):
+                continue
+            existing_reg = detect_portal_url(t, m, "", section_key=sec_key)
+            if not existing_reg:
+                cand_reg = str(x.get("reg_url", "")).strip()
+                if cand_reg and not is_blocked_url(cand_reg):
+                    existing_reg = cand_reg
+            order_ts = int(x.get("_order") or jalali_str_to_ts(item_date, now_stamp))
             cleaned_item = {
                 "id": int(x.get("id", make_id(normalize_persian(t)))),
-                "type": x.get("type", detect_type(t, m)),
+                "type": detect_type(t, m),
                 "category": sec_key,
                 "title": t,
                 "message": m,
-                "full_text": clean_text_content(raw_msg, max_len=DEFAULT_FULL_LEN, strip_links_and_tags_text=is_est),
+                "full_text": full_m,
                 "date": item_date,
-                "_order": int(x.get("_order", now_stamp)),
+                "_order": order_ts,
             }
             if existing_reg:
                 cleaned_item["reg_url"] = existing_reg
@@ -659,9 +800,12 @@ def main():
                 summary = clean_text_content(str(entry.get("summary", "")), max_len=DEFAULT_SUMMARY_LEN, strip_links_and_tags_text=is_est)
                 full_text = clean_text_content(str(entry.get("full_text") or summary), max_len=DEFAULT_FULL_LEN, strip_links_and_tags_text=is_est)
                 raw_html = str(entry.get("raw_html", ""))
+                item_date = normalize_date_to_jalali(str(entry.get("date", "")), today_jalali)
                 if not title:
                     continue
-                if not is_section_relevant(sec_key, title, summary):
+                if not is_section_relevant(sec_key, title, summary, full_text):
+                    continue
+                if not is_fresh_news(item_date, f"{title} {full_text}", today_jalali, now_stamp):
                     continue
                 norm_title = normalize_persian(title)
                 if not norm_title or is_duplicate(norm_title, global_seen_titles):
@@ -669,9 +813,8 @@ def main():
                 item_id = make_id(norm_title)
                 if item_id in seen_ids[sec_key]:
                     continue
-                reg_url = detect_portal_url(title, summary, raw_html)
-                item_date = normalize_date_to_jalali(str(entry.get("date", "")), today_jalali)
-                item_ts = int(entry.get("ts") or (now_stamp - idx))
+                reg_url = detect_portal_url(title, summary, raw_html, section_key=sec_key)
+                item_ts = int(entry.get("ts") or jalali_str_to_ts(item_date, now_stamp - idx))
                 item_obj = {
                     "id": item_id,
                     "type": detect_type(title, summary),
