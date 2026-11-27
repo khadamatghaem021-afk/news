@@ -83,7 +83,7 @@ IMPORTANT_KEYWORDS = [
     "هشدار", "اطلاعیه مهم", "تغییر زمان", "اصلاحیه",
 ]
 
-# فیلتر سخت‌گیرانه تبلیغات، رپورتاژ، تخفیف، فروش کالا/خدمات تجاری و لینک‌های غیررسمی
+# فیلتر سخت‌گیرانه تبلیغات، رپورتاژ، تخفیف، فروش کالا/خدمات تجاری و اخبار هواشناسی/آلودگی هوا
 STRICT_EXCLUDE_KEYWORDS = [
     "قابل توجه همکاران محترم", "ربات های ویژه ثبت نام", "ربات‌های ویژه ثبت نام",
     "مدیریت مغازه یا دفترکار", "هزینه اشتراک ماهانه", "اشتراک ماهانه",
@@ -92,6 +92,11 @@ STRICT_EXCLUDE_KEYWORDS = [
     "خرید مستقیم", "خرید اقساطی", "فروش ویژه", "حراج", "تعداد محدود",
     "همکاری با ما", "کسب درآمد", "بازاریابی", "پورسانت", "گروه تلگرامی",
     "کانال تلگرامی", "لینک گروه", "لینک کانال", "عضویت در گروه",
+    "هشدار هواشناسی", "هواشناسی", "آلودگی هوا", "افزایش مصاعد", "مصاعد",
+    "وزش باد", "پایداری جو", "تعطیلی مدارس", "تعطیل شدن مدارس", "غیرحضوری شدن مدارس",
+    "آرای ارود سورن", "ارود سورن", "دستگاه کارآمد", "پیشنهاد عالی برای همکاران",
+    "درآمد آسان", "معرفی امکان دریافت", "امکان دریافت پاداش", "تضمین قیمت",
+    "پشتیبانی عالی تحویل فوری", "24 ساعت کاری", "۲۴ ساعت کاری", "بلوار وکیل",
 ]
 
 BLOCKED_LINK_DOMAINS = (
@@ -422,13 +427,32 @@ def normalize_persian(text: str) -> str:
 
 
 def is_ad_or_promo(title: str, summary: str, full_text: str = "") -> bool:
-    """تشخیص تبلیغات، لینک‌های تبلیغاتی، شماره تماس تبلیغاتی و متن‌های بازاریابی"""
+    """تشخیص تبلیغات، متن‌های بازاریابی، شماره تماس و اخبار غیرمرتبط مثل هواشناسی و آلودگی هوا"""
     combined = f"{title} {summary} {full_text}"
-    norm = normalize_persian(combined)
+    lat = _persian_digits_to_latin(combined)
+    norm = normalize_persian(lat)
     if any(normalize_persian(bad) in norm for bad in STRICT_EXCLUDE_KEYWORDS):
         return True
-    if re.search(r"(?:شماره\s*تماس|تماس\s*با\s*ما|سفارش|پشتیبانی)\s*[:\s]*09\d{9}", _persian_digits_to_latin(combined)):
-        return True
+    promo_patterns = [
+        r"همکاران\s+در\s+صنف",
+        r"سود\s+بیشتر\s+انواع\s+مدل",
+        r"پاداش\s+معرفی",
+        r"امکان\s+استخدام\s+و\s+همکاری",
+        r"تخفیف\s+خیلی\s+ویژه\s+به\s+دوستان\s+همکار",
+        r"(?:شماره\s*تماس|تماس\s*با\s*ما|تلفن\s*تماس|سفارش|پشتیبانی)\s*[:\s]*09\d{9}",
+        r"آدرس\s*[:\s]*[^\n]{5,80}\b09\d{9}\b",
+    ]
+    for pat in promo_patterns:
+        if re.search(pat, lat, flags=re.IGNORECASE):
+            return True
+    weather_patterns = [
+        r"هشدار\s+هواشناسی",
+        r"پایداری\s+جو\s+و\s+عدم\s+وزش\s+باد",
+        r"آلودگی\s+هوا\s+افزایش",
+    ]
+    for wpat in weather_patterns:
+        if re.search(wpat, lat, flags=re.IGNORECASE):
+            return True
     return False
 
 
@@ -756,6 +780,8 @@ def main():
             m = clean_text_content(raw_msg, max_len=DEFAULT_SUMMARY_LEN, strip_links_and_tags_text=is_est)
             full_m = clean_text_content(raw_msg, max_len=DEFAULT_FULL_LEN, strip_links_and_tags_text=is_est)
             item_date = normalize_date_to_jalali(str(x.get("date", "")), today_jalali)
+            if is_ad_or_promo(t, m, full_m):
+                continue
             if not is_section_relevant(sec_key, t, m, full_m):
                 continue
             if not is_fresh_news(item_date, f"{t} {full_m}", today_jalali, now_stamp):
