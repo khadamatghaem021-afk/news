@@ -3,6 +3,7 @@ import calendar
 import hashlib
 import html as html_lib
 import json
+import math
 import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -13,7 +14,9 @@ import feedparser
 IRAN_TZ = timezone(timedelta(hours=3, minutes=30))
 
 DATA_DIR = Path("data")
-MAX_ITEMS_PER_SECTION = 40
+PAGE_SIZE = 5
+MAX_PAGES = 8
+MAX_ITEMS_PER_SECTION = PAGE_SIZE * MAX_PAGES  # ۴۰ خبر در ۸ صفحه ۵تایی
 DEFAULT_SUMMARY_LEN = 750
 DEFAULT_FULL_LEN = 1200
 
@@ -70,7 +73,7 @@ NOTICES_CORE_KEYWORDS = [
     "بخشنامه", "دستورالعمل", "پرداخت", "حمایتی", "بازنشسته",
 ]
 
-# کلماتی که خبر را واجد شرایط بخش «خبرهای مهم» (important.json) می‌کنند
+# کلماتی که خبر را واجد شرایط بخش «خبرهای مهم» می‌کنند
 IMPORTANT_KEYWORDS = [
     "فوری", "مهم", "تمدید مهلت", "آخرین مهلت", "پایان مهلت", "لغو",
     "آغاز ثبت نام", "شروع ثبت نام", "اعلام نتایج", "کارت ورود به جلسه",
@@ -111,11 +114,10 @@ PORTAL_RULES = [
     (["ثنا", "ابلاغیه", "قوه قضاییه", "عدل ایران"], "https://adliran.ir"),
 ]
 
-# خبرگزاری‌های عمومی حذف شدند؛ فقط کانال‌های تلگرامی تخصصی و سایت‌های مرجع کافی‌نت
 SECTIONS = {
     "important": {
         "file": DATA_DIR / "important.json",
-        "sources": [],  # به‌صورت هوشمند از بین تمام بخش‌ها بر اساس اهمیت و فوریت گلچین می‌شود
+        "sources": [],
     },
     "cafenet": {
         "file": DATA_DIR / "cafenet.json",
@@ -455,12 +457,10 @@ def is_duplicate(norm_title: str, seen_titles: set[str]) -> bool:
     return False
 
 
-def load_json_list(path: Path) -> list[dict]:
+def load_json_data(path: Path):
     if path.exists():
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                return data
+            return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             pass
     return []
@@ -548,6 +548,41 @@ def fetch_source(section_key: str, source: dict, fallback_jalali: str, fallback_
         return section_key, source["name"], []
 
 
+def write_paginated_section(sec_key: str, base_file: Path, items: list[dict], updated_jalali: str) -> None:
+    capped_items = items[:MAX_ITEMS_PER_SECTION]
+    total_items = len(capped_items)
+    total_pages = max(1, math.ceil(total_items / PAGE_SIZE)) if total_items > 0 else 1
+
+    # ۱) ذخیره فایل‌های جداگانه برای دانلود تنبل (Lazy Load) هر صفحه:
+    # صفحه ۱: data/<sec>.json  |  صفحه ۲ تا ۸: data/<sec>_p2.json ... data/<sec>_p8.json
+    for p in range(1, MAX_PAGES + 1):
+        start_idx = (p - 1) * PAGE_SIZE
+        end_idx = start_idx + PAGE_SIZE
+        page_items = capped_items[start_idx:end_idx]
+        next_page_file = f"{sec_key}_p{p + 1}.json" if p < total_pages else ""
+        page_payload = {
+            "section": sec_key,
+            "updated_at": updated_jalali,
+            "page": p,
+            "page_size": PAGE_SIZE,
+            "max_pages": MAX_PAGES,
+            "total_items": total_items,
+            "total_pages": total_pages,
+            "has_more": p < total_pages,
+            "next_page": (p + 1) if p < total_pages else None,
+            "next_file": next_page_file,
+            "items": page_items,
+        }
+        if p == 1:
+            target_path = base_file
+        else:
+            target_path = base_file.with_name(f"{sec_key}_p{p}.json")
+        target_path.write_text(
+            json.dumps(page_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+
 def main():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     now_ir = get_iran_now()
@@ -557,13 +592,27 @@ def main():
     seen_ids: dict[str, set[int]] = {}
     global_seen_titles: set[str] = set()
 
-    # ۱. بارگذاری آیتم‌های قبلی هر بخش (به جز important که از روی تمام بخش‌ها بازسازی می‌شود)
     for sec_key, cfg in SECTIONS.items():
         if sec_key == "important":
             section_items[sec_key] = []
             seen_ids[sec_key] = set()
             continue
-        raw_items = load_json_list(cfg["file"])
+
+        # خواندن صفحه ۱ (فایل اصلی) و صفحات ۲ تا ۸ قبلی در صورت وجود
+        raw_items = []
+        for p in range(1, MAX_PAGES + 1):
+            p_path = cfg["file"] if p == 1 else cfg["file"].with_name(f"{sec_key}_p{p}.json")
+            raw_data = load_json_data(p_path)
+            if isinstance(raw_data, dict):
+                if isinstance(raw_data.get("items"), list):
+                    raw_items.extend(raw_data["items"])
+                if p == 1 and isinstance(raw_data.get("pages"), dict):
+                    for pk in sorted(raw_data["pages"].keys(), key=lambda k: int(k) if str(k).isdigit() else 999):
+                        if pk != "1" and isinstance(raw_data["pages"][pk], list):
+                            raw_items.extend(raw_data["pages"][pk])
+            elif isinstance(raw_data, list):
+                raw_items.extend(raw_data)
+
         items = []
         for x in raw_items:
             t = clean_text_content(str(x.get("title", "")), max_len=130)
@@ -595,7 +644,6 @@ def main():
             normalize_persian(str(x.get("title", ""))) for x in items if x.get("title")
         )
 
-    # ۲. دریافت هم‌زمان اخبار جدید از کانال‌های تلگرامی تخصصی و سایت‌های مرجع کافی‌نت
     futures = []
     with ThreadPoolExecutor(max_workers=12) as executor:
         for sec_key, cfg in SECTIONS.items():
@@ -644,7 +692,6 @@ def main():
                     sample_dates.append(item_date)
             print(f"[{sec_key}] منبع «{src_name}»: {added} اطلاعیه مرتبط جدید اضافه شد. (نمونه تاریخ‌ها: {sample_dates})")
 
-    # ۳. ساخت هوشمند بخش «خبرهای مهم» (data/important.json) از بین خبرهای فوری و کلیدیِ تمام بخش‌ها
     important_candidates = []
     important_seen_ids = set()
     for sec_key in ("cafenet", "cars", "exams", "notices"):
@@ -660,17 +707,13 @@ def main():
     section_items["important"] = important_candidates
     print(f"[important] مجموع خبرهای مهم گلچین‌شده: {len(important_candidates)} مورد.")
 
-    # ۴. مرتب‌سازی و ذخیره تمام فایل‌های JSON
     for sec_key, cfg in SECTIONS.items():
         sorted_sec = sorted(
             section_items[sec_key],
             key=lambda x: int(x.get("_order", x.get("id", 0))),
             reverse=True,
         )[:MAX_ITEMS_PER_SECTION]
-        cfg["file"].write_text(
-            json.dumps(sorted_sec, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        write_paginated_section(sec_key, cfg["file"], sorted_sec, today_jalali)
 
 
 if __name__ == "__main__":
